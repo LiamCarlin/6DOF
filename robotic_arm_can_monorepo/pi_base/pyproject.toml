@@ -1,0 +1,14 @@
+[project]
+name = "arm-pi"
+version = "0.1.0"
+description = "Raspberry Pi 5 base-station for 6-DOF robotic arm over CAN"
+requires-python = ">=3.9"
+dependencies = [
+    "python-can>=4.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+arm-cli = "arm_pi.cli:main"

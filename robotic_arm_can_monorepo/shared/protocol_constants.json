@@ -1,0 +1,70 @@
+{
+  "can": {
+    "bitrate": 500000,
+    "standard": "CAN2.0A",
+    "id_bits": 11,
+    "payload_bytes": 8,
+    "endianness": "little"
+  },
+  "can_id": {
+    "command_base": "0x100",
+    "telemetry_base": "0x200",
+    "heartbeat_base": "0x300"
+  },
+  "nodes": {
+    "joint_1": 1,
+    "joint_2": 2,
+    "joint_3": 3,
+    "joint_4": 4,
+    "joint_5": 5,
+    "joint_6": 6
+  },
+  "opcodes": {
+    "KEEPALIVE": "0x00",
+    "ENABLE":    "0x01",
+    "DISABLE":   "0x02",
+    "STOP":      "0x03",
+    "SET_ZERO":  "0x04",
+    "SET_POS":   "0x10"
+  },
+  "status_bits": {
+    "ENABLED":          0,
+    "MOVING":           1,
+    "ZEROED":           2,
+    "AT_TARGET":        3,
+    "ENCODER_OK":       4,
+    "CAN_OK":           5,
+    "WATCHDOG_TIMEOUT": 6,
+    "LIMIT_FAULT":      7
+  },
+  "fault_codes": {
+    "OK":                    0,
+    "ENCODER_I2C_FAIL":      1,
+    "CAN_INIT_FAIL":         2,
+    "COMMAND_OUT_OF_RANGE":  3,
+    "WATCHDOG_STOP":         4,
+    "INTERNAL_ERROR":        5
+  },
+  "limits": {
+    "soft_limit_min_mdeg": -180000,
+    "soft_limit_max_mdeg":  180000,
+    "position_tolerance_mdeg": 300,
+    "watchdog_timeout_ms": 300,
+    "keepalive_hz": 20
+  },
+  "telemetry": {
+    "telemetry_hz": 50,
+    "heartbeat_hz": 10
+  },
+  "mechanical": {
+    "motor_full_steps_per_rev": 200,
+    "microsteps": 16,
+    "gear_ratio": 21.0,
+    "encoder_counts": 4096,
+    "encoder_degrees": 360.0
+  },
+  "units": {
+    "angle": "millidegrees (mdeg)",
+    "mdeg_per_degree": 1000
+  }
+}
