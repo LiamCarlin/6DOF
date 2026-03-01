@@ -164,19 +164,9 @@ static void handleCommand(const CommandFrame &cmd) {
                 DBG("[CMD] SET_POS ignored — not enabled");
                 break;
             }
-            bool ok = controllerSetTarget(cmd.angle_mdeg, cmd.param);
-            if (!ok) {
-                gFaultCode = FAULT_COMMAND_OUT_OF_RANGE;
-                setFlag(gStatusFlags, BIT_LIMIT_FAULT);
-                DBG("[CMD] SET_POS rejected — out of range (%ld)", (long)cmd.angle_mdeg);
-            } else {
-                // Clear limit fault on a good command
-                clearFlag(gStatusFlags, BIT_LIMIT_FAULT);
-                if (gFaultCode == FAULT_COMMAND_OUT_OF_RANGE) {
-                    gFaultCode = FAULT_OK;
-                }
-                DBG("[CMD] SET_POS %ld mdeg, speed=%u", (long)cmd.angle_mdeg, cmd.param);
-            }
+            controllerSetTarget(cmd.angle_mdeg, cmd.param);
+            DBG("[CMD] SET_POS %ld mdeg (%.2f°), speed=%u",
+                (long)cmd.angle_mdeg, (float)cmd.angle_mdeg / 1000.0f, cmd.param);
             break;
         }
 

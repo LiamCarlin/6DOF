@@ -73,12 +73,13 @@ static constexpr uint32_t MOTOR_USTEPS_REV      = MOTOR_FULL_STEPS_REV * MICROST
 static constexpr float    OUTPUT_USTEPS_REV     = MOTOR_USTEPS_REV * GEAR_RATIO;           // 67200
 
 // =====================================================================
-// Control limits
+// Control limits  (NO soft limits — unlimited multi-turn rotation)
 // =====================================================================
-static constexpr int32_t  SOFT_LIMIT_MIN_MDEG   = -180000;   // −180°
-static constexpr int32_t  SOFT_LIMIT_MAX_MDEG   =  180000;   // +180°
 static constexpr int32_t  POSITION_TOLERANCE_MDEG = 300;      // ±0.3°
 static constexpr int32_t  MDEG_PER_DEG           = 1000;
+static constexpr int32_t  FULL_TURN_MDEG         = 360000;    // one output revolution
+// Wrap detection: if single-turn reading jumps more than this, count a wrap
+static constexpr int32_t  WRAP_THRESHOLD_MDEG    = 180000;    // half turn
 
 // =====================================================================
 // Timing

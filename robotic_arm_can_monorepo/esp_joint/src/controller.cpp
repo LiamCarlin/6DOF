@@ -1,17 +1,17 @@
 /**
- * controller.cpp — Output-angle position controller.
+ * controller.cpp — Output-angle position controller with multi-turn tracking.
  *
  * Strategy (P-to-rate with deceleration):
- *   1. Read AS5600 output angle.
- *   2. Apply zero offset → zero-referenced output angle.
- *   3. Compute wrap-aware signed error  (target − current)  in mdeg.
- *   4. Map |error| to a step frequency (proportional with clamp).
- *   5. When |error| ≤ tolerance, stop and set AT_TARGET.
+ *   1. Read AS5600 single-turn angle (0–359.999°).
+ *   2. Detect wraparound (crossing 0°↔360°) to maintain a turn counter.
+ *   3. Compute absolute multi-turn position = turns * 360° + single-turn.
+ *   4. Apply zero offset → zero-referenced continuous position.
+ *   5. Compute linear error (target − current) — NO wrapping, direct difference.
+ *   6. Map |error| to a step frequency (proportional with clamp).
+ *   7. When |error| ≤ tolerance, stop and set AT_TARGET.
  *
- * The encoder is on the OUTPUT shaft, so the control loop works directly
- * in output-angle space — no gear conversion needed in the loop itself.
- * The step generator drives the motor, and the gear converts motor rotation
- * to output rotation; the encoder closes the loop.
+ * No soft limits — the arm can rotate any number of turns in either direction.
+ * The 21:1 cycloidal gearbox means 21 motor revs = 1 output rev.
  */
 
 #include "controller.h"
@@ -25,32 +25,23 @@
 // Internal state
 // =====================================================================
 
-static int32_t  sTargetMdeg     = 0;       // commanded output angle (mdeg)
-static int32_t  sCurrentMdeg    = 0;       // latest encoder reading (zero-ref'd, mdeg)
-static int32_t  sZeroOffsetMdeg = 0;       // stored at SET_ZERO
+static int32_t  sTargetMdeg     = 0;       // commanded output angle (mdeg, multi-turn)
+static int32_t  sCurrentMdeg    = 0;       // multi-turn zero-referenced position (mdeg)
+static int32_t  sZeroOffsetMdeg = 0;       // stored at SET_ZERO (absolute multi-turn)
 static bool     sMoving         = false;
 static bool     sAtTarget       = false;
 static bool     sEncoderOk      = false;
 static bool     sZeroed         = false;
 static uint16_t sSpeedLimit     = 0;       // 0 = use default
 
+// Multi-turn tracking
+static int32_t  sTurnCount      = 0;       // number of full output turns
+static int32_t  sPrevSingleMdeg = 0;       // previous single-turn reading (0–359999)
+static bool     sFirstReading   = true;    // first reading after init/zero
+
 // =====================================================================
 // Helpers
 // =====================================================================
-
-/**
- * Shortest signed angle difference in millidegrees, wrapping at 360 000.
- * Result is in range (−180000, +180000].
- */
-static int32_t shortestDiffMdeg(int32_t target, int32_t current) {
-    int32_t diff = target - current;
-
-    // Normalise into (−180000, +180000]
-    while (diff >  180000) diff -= 360000;
-    while (diff <= -180000) diff += 360000;
-
-    return diff;
-}
 
 /**
  * Map an absolute error (mdeg) to a step frequency (Hz).
@@ -62,15 +53,7 @@ static uint32_t errorToStepHz(int32_t absErrorMdeg, uint16_t speedLimitMdeg) {
     if (speedLimitMdeg == 0) speedLimitMdeg = DEFAULT_SPEED_MDEG_S;
 
     // Convert speed limit (mdeg/s at output) → step Hz at motor
-    // output_deg_per_s = speedLimit / 1000
-    // motor_rev_per_s  = output_deg_per_s / 360 * gear_ratio
-    // step_hz          = motor_rev_per_s * motor_usteps_rev
-    //
     // step_hz = speedLimit * gear_ratio * motor_usteps_rev / (1000 * 360)
-    // Simplify: speedLimit * 21 * 3200 / 360000
-    //         = speedLimit * 67200 / 360000
-    //         ≈ speedLimit * 0.18667
-
     float maxHz_f = (float)speedLimitMdeg * GEAR_RATIO * MOTOR_USTEPS_REV / 360000.0f;
     uint32_t maxHz = (uint32_t)maxHz_f;
     if (maxHz > MAX_STEP_HZ) maxHz = MAX_STEP_HZ;
@@ -106,21 +89,21 @@ void controllerInit() {
     sEncoderOk      = false;
     sZeroed         = false;
     sSpeedLimit     = 0;
+    sTurnCount      = 0;
+    sPrevSingleMdeg = 0;
+    sFirstReading   = true;
 
-    DBG("[CTRL] controller initialised");
+    DBG("[CTRL] controller initialised (multi-turn, no limits)");
 }
 
 bool controllerSetTarget(int32_t target_mdeg, uint16_t speed_limit_mdeg_s) {
-    // Validate soft limits
-    if (target_mdeg < SOFT_LIMIT_MIN_MDEG || target_mdeg > SOFT_LIMIT_MAX_MDEG) {
-        return false;
-    }
-
+    // No soft limits — accept any int32 value
     sTargetMdeg = target_mdeg;
     sSpeedLimit = speed_limit_mdeg_s;
     sMoving     = true;
     sAtTarget   = false;
-    DBG("[CTRL] target=%ld mdeg, speed=%u", (long)target_mdeg, speed_limit_mdeg_s);
+    DBG("[CTRL] target=%ld mdeg (%.2f turns), speed=%u",
+        (long)target_mdeg, (float)target_mdeg / 360000.0f, speed_limit_mdeg_s);
     return true;
 }
 
@@ -128,13 +111,18 @@ void controllerSetZero() {
     // Read current raw encoder angle
     int32_t rawMdeg = 0;
     if (encoderReadMdeg(rawMdeg)) {
-        sZeroOffsetMdeg = rawMdeg;
-        sZeroed = true;
-        sTargetMdeg = 0;
-        sAtTarget   = false;
-        sMoving     = false;
+        // Reset turn counter and store absolute position as zero offset
+        sTurnCount      = 0;
+        sPrevSingleMdeg = rawMdeg;
+        sFirstReading   = false;
+        sZeroOffsetMdeg = rawMdeg;  // single-turn reading at zero
+        sZeroed         = true;
+        sCurrentMdeg    = 0;
+        sTargetMdeg     = 0;
+        sAtTarget       = false;
+        sMoving         = false;
         stepgenStop();
-        DBG("[CTRL] zero set at raw=%ld mdeg", (long)rawMdeg);
+        DBG("[CTRL] zero set at raw=%ld mdeg, turn counter reset", (long)rawMdeg);
     }
 }
 
@@ -146,9 +134,9 @@ void controllerStop() {
 }
 
 void controllerUpdate() {
-    // --- 1. Read encoder ------------------------------------------------
-    int32_t rawMdeg = 0;
-    sEncoderOk = encoderReadMdeg(rawMdeg);
+    // --- 1. Read single-turn encoder (0–359999 mdeg) --------------------
+    int32_t singleMdeg = 0;
+    sEncoderOk = encoderReadMdeg(singleMdeg);
     if (!sEncoderOk) {
         // If encoder fails, stop for safety
         stepgenStop();
@@ -156,23 +144,45 @@ void controllerUpdate() {
         return;
     }
 
-    // --- 2. Apply zero offset → zero-referenced angle ------------------
-    int32_t zeroed = rawMdeg - sZeroOffsetMdeg;
-    // Normalise to (−180000, +180000]
-    while (zeroed >  180000) zeroed -= 360000;
-    while (zeroed <= -180000) zeroed += 360000;
-    sCurrentMdeg = zeroed;
+    // --- 2. Multi-turn wraparound detection -----------------------------
+    if (sFirstReading) {
+        sPrevSingleMdeg = singleMdeg;
+        sFirstReading = false;
+    } else {
+        int32_t delta = singleMdeg - sPrevSingleMdeg;
 
-    // --- 3. If not moving, nothing to do --------------------------------
+        // If the single-turn reading jumped by more than half a turn,
+        // it wrapped around
+        if (delta > WRAP_THRESHOLD_MDEG) {
+            // Went from high to low → wrapped backwards (e.g. 350° → 10°)
+            // Actually this means single went UP by a lot, which means
+            // it wrapped from low to high... let's think carefully:
+            // prev=10000 (10°), new=350000 (350°) → delta=+340000 → wrapped backwards
+            sTurnCount--;
+        } else if (delta < -WRAP_THRESHOLD_MDEG) {
+            // Went from high to low → wrapped forwards (e.g. 350° → 10°)
+            // prev=350000, new=10000 → delta=-340000 → wrapped forwards
+            sTurnCount++;
+        }
+        sPrevSingleMdeg = singleMdeg;
+    }
+
+    // --- 3. Compute absolute multi-turn position ------------------------
+    int32_t absoluteMdeg = sTurnCount * FULL_TURN_MDEG + singleMdeg;
+
+    // --- 4. Apply zero offset → zero-referenced position ----------------
+    sCurrentMdeg = absoluteMdeg - sZeroOffsetMdeg;
+
+    // --- 5. If not moving, nothing to do --------------------------------
     if (!sMoving) {
         return;
     }
 
-    // --- 4. Compute wrap-aware error ------------------------------------
-    int32_t error = shortestDiffMdeg(sTargetMdeg, sCurrentMdeg);
+    // --- 6. Compute LINEAR error (no wrapping — multi-turn) -------------
+    int32_t error = sTargetMdeg - sCurrentMdeg;
     int32_t absError = abs(error);
 
-    // --- 5. Check tolerance ---------------------------------------------
+    // --- 7. Check tolerance ---------------------------------------------
     if (absError <= POSITION_TOLERANCE_MDEG) {
         stepgenStop();
         sMoving   = false;
@@ -180,7 +190,7 @@ void controllerUpdate() {
         return;
     }
 
-    // --- 6. Determine direction and speed --------------------------------
+    // --- 8. Determine direction and speed --------------------------------
     bool forward = (error > 0);
     stepgenSetDirection(forward);
 

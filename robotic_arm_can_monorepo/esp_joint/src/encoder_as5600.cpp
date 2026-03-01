@@ -2,6 +2,7 @@
  * encoder_as5600.cpp — AS5600 I2C absolute encoder driver.
  */
 
+#include <Arduino.h>
 #include "encoder_as5600.h"
 #include "config.h"
 #include <Wire.h>

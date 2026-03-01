@@ -1,8 +1,10 @@
 /**
- * controller.h — Output-angle position controller.
+ * controller.h — Output-angle position controller with multi-turn tracking.
  *
  * Runs periodically from the main loop (or a FreeRTOS task).
- * Reads the encoder, computes wrap-aware error, drives the step generator.
+ * Reads the encoder, tracks multi-turn position via wraparound detection,
+ * computes linear error, and drives the step generator.
+ * No soft limits — unlimited rotation in either direction.
  */
 
 #ifndef CONTROLLER_H
@@ -17,9 +19,10 @@ void controllerInit();
 
 /**
  * Set the target output angle (in millidegrees, zero-referenced).
- * @param target_mdeg  Desired output angle in mdeg (−180000 … +180000).
+ * Unlimited range — any int32 value is accepted (multi-turn).
+ * @param target_mdeg  Desired output angle in mdeg (unlimited).
  * @param speed_limit_mdeg_s  Max speed in mdeg/s (0 = use default).
- * @return true if within soft limits; false if rejected.
+ * @return always true (no soft limits).
  */
 bool controllerSetTarget(int32_t target_mdeg, uint16_t speed_limit_mdeg_s);
 
