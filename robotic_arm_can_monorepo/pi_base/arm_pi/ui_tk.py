@@ -360,6 +360,7 @@ class ArmUI:
             self.program,
             on_move=self._program_move,
             on_status=self._program_status,
+            get_joint_state=self._get_joint_state,
         )
 
         self.program_thread = threading.Thread(target=self.runner.run, daemon=True)
@@ -382,6 +383,16 @@ class ArmUI:
     def _program_status(self, msg: str) -> None:
         """Callback: program status update."""
         self.lbl_prog_status.config(text=msg, foreground="black")
+
+    def _get_joint_state(self, joint_id: int) -> tuple[bool, bool]:
+        """Callback: return (online, at_target) for a joint."""
+        c = self.manager.nodes.get(joint_id) if self.manager else None
+        if c is None:
+            return (False, False)
+        state = c.state
+        online = state.online
+        at_target = state.telemetry and state.telemetry.at_target
+        return (online, bool(at_target))
 
     # ==================================================================
     # Main loop

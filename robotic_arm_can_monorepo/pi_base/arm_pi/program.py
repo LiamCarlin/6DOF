@@ -113,10 +113,12 @@ class ProgramRunner:
         program: GCodeProgram,
         on_move: Optional[Callable[[int, float, int], None]] = None,
         on_status: Optional[Callable[[str], None]] = None,
+        get_joint_state: Optional[Callable[[int], tuple[bool, bool]]] = None,  # (online, at_target)
     ):
         self.program = program
         self.on_move = on_move
         self.on_status = on_status
+        self.get_joint_state = get_joint_state
         self.current_step = 0
         self.running = False
         self.paused = False
@@ -124,6 +126,25 @@ class ProgramRunner:
     def _log(self, msg: str) -> None:
         if self.on_status:
             self.on_status(msg)
+
+    def _wait_for_target(self, joint_id: int, timeout_s: float = 30.0) -> None:
+        """Wait for a joint to reach its target or timeout."""
+        if not self.get_joint_state:
+            return  # No state callback, just return
+
+        start_time = time.time()
+        while self.running and (time.time() - start_time) < timeout_s:
+            while self.paused and self.running:
+                time.sleep(0.05)
+
+            if not self.running:
+                break
+
+            online, at_target = self.get_joint_state(joint_id)
+            if at_target:
+                return  # Target reached!
+
+            time.sleep(0.05)
 
     def run(self) -> None:
         """Execute the program (blocking)."""
@@ -145,12 +166,12 @@ class ProgramRunner:
                 if instr.type == "move":
                     self._log(
                         f"[{idx+1}/{len(self.program)}] Move J{instr.joint_id} "
-                        f"to {instr.angle}° @ {instr.speed} mdeg/s"
+                        f"to {instr.angle}°"
                     )
                     if self.on_move:
                         self.on_move(instr.joint_id, instr.angle, instr.speed)
-                    # Small delay to let the move start
-                    time.sleep(0.1)
+                    # Wait for joint to reach target (with timeout)
+                    self._wait_for_target(instr.joint_id, timeout_s=30.0)
 
                 elif instr.type == "dwell":
                     self._log(f"[{idx+1}/{len(self.program)}] Dwell {instr.dwell_ms} ms")
