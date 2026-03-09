@@ -46,11 +46,14 @@
     "INTERNAL_ERROR":        5
   },
   "limits": {
-    "soft_limit_min_mdeg": -180000,
-    "soft_limit_max_mdeg":  180000,
     "position_tolerance_mdeg": 300,
     "watchdog_timeout_ms": 300,
     "keepalive_hz": 20
+  },
+  "multi_turn": {
+    "enabled": true,
+    "soft_limits": false,
+    "description": "No angle limits. Multi-turn tracking via encoder wraparound detection."
   },
   "telemetry": {
     "telemetry_hz": 50,

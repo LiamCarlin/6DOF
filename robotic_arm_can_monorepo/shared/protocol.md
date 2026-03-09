@@ -113,11 +113,22 @@ CAN ID = `0x300 + node_id`, sent at **10 Hz**
 
 | Parameter | Value |
 |---|---|
-| Soft limit min | −180 000 mdeg (−180°) |
-| Soft limit max | +180 000 mdeg (+180°) |
+| Soft limits | **None** — unlimited multi-turn rotation |
 | Position tolerance | ±300 mdeg (±0.3°) |
 | Watchdog timeout | 300 ms |
 | Keepalive rate (Pi) | 20 Hz |
+
+## Multi-Turn Tracking
+
+The AS5600 reports a single-turn absolute angle (0–360°). The firmware tracks
+multi-turn position by detecting encoder wraparound (crossing from ~359°→~0°
+or ~0°→~359°) and maintaining a **turn counter**. This gives continuous
+position tracking across unlimited rotations.
+
+- `SET_ZERO` resets the turn counter and zero offset.
+- Target angles can be any int32 millidegree value (e.g., 720000 = 2 full turns).
+- The 21:1 cycloidal gearbox means 21 motor revolutions = 1 output revolution.
+- int32 range allows ±2,147,483° (±5965 output turns) — effectively unlimited.
 
 ## Mechanical Parameters
 

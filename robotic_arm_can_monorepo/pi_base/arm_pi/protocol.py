@@ -48,9 +48,7 @@ STATUS_BITS = CONSTANTS["status_bits"]
 # Fault codes
 FAULT_CODES = {v: k for k, v in CONSTANTS["fault_codes"].items()}
 
-# Limits
-SOFT_LIMIT_MIN_MDEG = CONSTANTS["limits"]["soft_limit_min_mdeg"]
-SOFT_LIMIT_MAX_MDEG = CONSTANTS["limits"]["soft_limit_max_mdeg"]
+# Limits  (no soft angle limits — unlimited multi-turn)
 MDEG_PER_DEG        = CONSTANTS["units"]["mdeg_per_degree"]
 
 CAN_BITRATE = CONSTANTS["can"]["bitrate"]
