@@ -109,11 +109,15 @@ class JointNodeClient:
         try:
             if arb_id == self._telem_id and len(data) == 8:
                 telem = proto.unpack_telemetry(data)
-                # Transform encoder angles → arm angles
-                telem.current_angle_mdeg = int(
+                # Transform encoder angles → arm angles (create new object)
+                transformed_mdeg = int(
                     telem.current_angle_mdeg / self._gear_ratio * self._direction
                 )
-                telem.current_angle_deg = telem.current_angle_mdeg / 1000.0
+                telem = proto.TelemetryFrame(
+                    status_flags=telem.status_flags,
+                    fault_code=telem.fault_code,
+                    current_angle_mdeg=transformed_mdeg,
+                )
                 with self._lock:
                     self.state.telemetry = telem
                     self.state.last_telemetry_time = now
