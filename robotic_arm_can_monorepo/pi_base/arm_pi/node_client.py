@@ -19,6 +19,19 @@ from .can_bus import CANBus
 NUM_JOINTS = 6
 
 
+# Per-joint configuration (direction flip + gear ratio)
+# direction: 1 = normal, -1 = reversed motor direction
+# gear_ratio: encoder_degrees / arm_degrees (e.g., 21.0 for 21:1 gearbox)
+JOINT_CONFIG = {
+    1: {"direction": 1,  "gear_ratio": 21.0},
+    2: {"direction": -1, "gear_ratio": 21.0},
+    3: {"direction": 1,  "gear_ratio": 21.0},
+    4: {"direction": 1,  "gear_ratio": 21.0},
+    5: {"direction": 1,  "gear_ratio": 21.0},
+    6: {"direction": 1,  "gear_ratio": 21.0},
+}
+
+
 @dataclass
 class NodeState:
     """Last-known state of a joint node, updated from telemetry + heartbeat."""
@@ -54,6 +67,11 @@ class JointNodeClient:
         self._keepalive_enabled = False
         self._lock = threading.Lock()
 
+        # Joint-specific config
+        cfg = JOINT_CONFIG.get(node_id, {"direction": 1, "gear_ratio": 1.0})
+        self._direction = cfg["direction"]
+        self._gear_ratio = cfg["gear_ratio"]
+
     # ------------------------------------------------------------------
     # send helpers
     # ------------------------------------------------------------------
@@ -74,7 +92,10 @@ class JointNodeClient:
         self.send_command(proto.pack_set_zero())
 
     def set_pos(self, deg: float, speed_mdeg_s: int = 0) -> None:
-        mdeg = proto.deg_to_mdeg(deg)
+        """Set target position in ARM degrees (accounts for gear ratio + direction)."""
+        # Transform: arm_deg → encoder_deg
+        encoder_deg = deg * self._gear_ratio * self._direction
+        mdeg = proto.deg_to_mdeg(encoder_deg)
         self.send_command(proto.pack_set_pos(mdeg, speed_mdeg_s))
 
     def keepalive(self) -> None:
@@ -88,6 +109,11 @@ class JointNodeClient:
         try:
             if arb_id == self._telem_id and len(data) == 8:
                 telem = proto.unpack_telemetry(data)
+                # Transform encoder angles → arm angles
+                telem.current_angle_mdeg = int(
+                    telem.current_angle_mdeg / self._gear_ratio * self._direction
+                )
+                telem.current_angle_deg = telem.current_angle_mdeg / 1000.0
                 with self._lock:
                     self.state.telemetry = telem
                     self.state.last_telemetry_time = now
