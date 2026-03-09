@@ -68,7 +68,11 @@ void stepgenSetEnable(bool en) {
 }
 
 void stepgenSetDirection(bool forward) {
+#if INVERT_DIR
+    digitalWrite(PIN_DIR, forward ? LOW : HIGH);
+#else
     digitalWrite(PIN_DIR, forward ? HIGH : LOW);
+#endif
 }
 
 void stepgenSetFrequency(uint32_t hz) {

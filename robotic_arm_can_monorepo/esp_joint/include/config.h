@@ -38,6 +38,11 @@
 // TMC2209 EN polarity: active-LOW means LOW = enabled, HIGH = disabled
 #define EN_ACTIVE_LOW  true  // set false if your board uses active-high
 
+// Direction inversion (override in platformio.ini if wiring is reversed)
+#ifndef INVERT_DIR
+#define INVERT_DIR  false
+#endif
+
 // =====================================================================
 // AS5600 encoder (I2C)
 // =====================================================================

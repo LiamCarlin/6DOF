@@ -5,6 +5,8 @@ Each connected joint gets its own column with independent angle entry,
 enable/disable/stop/zero/send buttons, and live telemetry.
 Offline joints are greyed out.  Scales to 6 joints automatically.
 
+Also supports G-code program upload and playback.
+
 Run:  python -m arm_pi.ui_tk
 """
 
@@ -12,13 +14,15 @@ from __future__ import annotations
 
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 from dataclasses import dataclass, field
 from typing import Dict
+import threading
 
 from . import protocol as proto
 from .can_bus import CANBus
 from .node_client import ArmBusManager, JointNodeClient, NodeState, NUM_JOINTS
+from .program import GCodeProgram, ProgramRunner
 
 # How many joints to show in the UI (increase when you add more)
 ACTIVE_JOINTS = [1, 2]
@@ -52,6 +56,11 @@ class ArmUI:
         self._connected = False
         self.joints: Dict[int, JointWidgets] = {}
 
+        # Program support
+        self.program: GCodeProgram | None = None
+        self.runner: ProgramRunner | None = None
+        self.program_thread: threading.Thread | None = None
+
         self.root = tk.Tk()
         self.root.title("6-DOF Arm — CAN Control Panel")
         self.root.resizable(False, False)
@@ -82,6 +91,24 @@ class ArmUI:
         ttk.Button(frm_top, text="DISABLE ALL", command=self._cmd_disable_all).pack(side="left", padx=3)
         ttk.Button(frm_top, text="STOP ALL",    command=self._cmd_stop_all).pack(side="left", padx=3)
         ttk.Button(frm_top, text="ZERO ALL",    command=self._cmd_zero_all).pack(side="left", padx=3)
+
+        # ---- Program control frame ----------------------------------------
+        frm_prog = ttk.LabelFrame(self.root, text="Program Control")
+        frm_prog.grid(row=0, column=len(ACTIVE_JOINTS), rowspan=2, sticky="nsew", **pad)
+
+        ttk.Button(frm_prog, text="Load Program", command=self._load_program).pack(**pad)
+
+        self.lbl_program = ttk.Label(frm_prog, text="No program", foreground="gray")
+        self.lbl_program.pack(**pad)
+
+        frm_prog_btn = ttk.Frame(frm_prog)
+        frm_prog_btn.pack(**pad)
+        ttk.Button(frm_prog_btn, text="RUN",    command=self._run_program).pack(side="left", padx=3)
+        ttk.Button(frm_prog_btn, text="PAUSE",  command=self._pause_program).pack(side="left", padx=3)
+        ttk.Button(frm_prog_btn, text="STOP",   command=self._stop_program).pack(side="left", padx=3)
+
+        self.lbl_prog_status = ttk.Label(frm_prog, text="—", wraplength=200, justify="left")
+        self.lbl_prog_status.pack(**pad)
 
         # ---- One column per joint ---------------------------------------
         for idx, jid in enumerate(ACTIVE_JOINTS):
@@ -289,6 +316,72 @@ class ArmUI:
                     jw.lbl_uptime.config(text=f"{hb.uptime_ms / 1000:.1f} s")
 
         self.root.after(self.POLL_MS, self._poll)
+
+    # ==================================================================
+    # Program control
+    # ==================================================================
+
+    def _load_program(self) -> None:
+        """Load a G-code program from file."""
+        path = filedialog.askopenfilename(
+            title="Load G-code Program",
+            filetypes=[("G-code", "*.gcode"), ("Text", "*.txt"), ("All", "*")]
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                text = f.read()
+            self.program = GCodeProgram(text)
+            self.lbl_program.config(text=f"{len(self.program)} steps", foreground="black")
+            self.lbl_prog_status.config(text="Program loaded")
+        except Exception as e:
+            messagebox.showerror("Parse Error", str(e))
+            self.lbl_prog_status.config(text=f"Error: {e}", foreground="red")
+
+    def _run_program(self) -> None:
+        """Run the loaded program."""
+        if self.program is None:
+            messagebox.showwarning("No Program", "Load a program first")
+            return
+
+        if self.runner and self.runner.running:
+            messagebox.showwarning("Running", "Program already running")
+            return
+
+        # Stop any existing runner
+        if self.runner:
+            self.runner.stop()
+            if self.program_thread:
+                self.program_thread.join(timeout=1.0)
+
+        self.runner = ProgramRunner(
+            self.program,
+            on_move=self._program_move,
+            on_status=self._program_status,
+        )
+
+        self.program_thread = threading.Thread(target=self.runner.run, daemon=True)
+        self.program_thread.start()
+
+    def _pause_program(self) -> None:
+        if self.runner and self.runner.running:
+            self.runner.pause()
+
+    def _stop_program(self) -> None:
+        if self.runner:
+            self.runner.stop()
+
+    def _program_move(self, joint_id: int, angle: float, speed: int) -> None:
+        """Callback: program requests a move."""
+        c = self.manager.nodes.get(joint_id) if self.manager else None
+        if c:
+            c.set_pos(angle, speed)
+
+    def _program_status(self, msg: str) -> None:
+        """Callback: program status update."""
+        self.lbl_prog_status.config(text=msg, foreground="black")
 
     # ==================================================================
     # Main loop

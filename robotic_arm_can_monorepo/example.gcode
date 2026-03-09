@@ -1,0 +1,39 @@
+; Example G-code program for 2-joint arm
+; Tests both joints with limits enforced
+
+; Joint 1: rotate full range
+G1 J1 A0 S60000
+DWELL 500
+
+G1 J1 A180 S60000
+DWELL 500
+
+G1 J1 A-180 S60000
+DWELL 500
+
+G1 J1 A0 S60000
+DWELL 500
+
+; Joint 2: within -90 to +90 limits
+G1 J2 A-90 S60000
+DWELL 500
+
+G1 J2 A90 S60000
+DWELL 500
+
+G1 J2 A0 S60000
+DWELL 500
+
+; Coordinated move
+G1 J1 A45 S60000
+G1 J2 A45 S60000
+DWELL 1000
+
+G1 J1 A-45 S60000
+G1 J2 A-45 S60000
+DWELL 1000
+
+; Return to home
+G1 J1 A0 S60000
+G1 J2 A0 S60000
+DWELL 500
