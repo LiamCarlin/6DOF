@@ -1,5 +1,11 @@
 # Raspberry Pi 5 — Base Station for 6-DOF Robotic Arm
 
+Just use this
+
+'''bash
+cd ~/robotic_arm_can_monorepo/pi_base/scripts && chmod +x can_up.sh && sudo ./can_up.sh && cd .. && pip install -e . && python -m arm_pi.ui_tk
+'''
+
 ## Prerequisites
 
 * Raspberry Pi 5 with Raspberry Pi OS (64-bit Bookworm or later)
